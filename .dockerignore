@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+.env
+
+# Node
+node_modules
+src/view_fn_hist/web/frontend/node_modules
+src/view_fn_hist/web/frontend/dist
+
+# IDE
+.vscode
+.idea
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Misc
+*.md
+.claude
+docs/
+tests/
