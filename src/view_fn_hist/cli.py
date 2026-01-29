@@ -1,6 +1,7 @@
 """CLI entry point for view-fn-hist."""
 
 import argparse
+import difflib
 import os
 import sys
 from pathlib import Path
@@ -14,7 +15,33 @@ from .parser import detect_language
 from .providers import GitProvider, GitHubProvider
 from .providers.github_provider import parse_github_url
 from .summarizer import DEFAULT_MODEL, build_prompt, is_cached
-from .tui import run_tui
+
+
+def compute_changed_lines(old_source: str | None, new_source: str) -> set[int]:
+    """
+    Compute which lines in new_source are different from old_source.
+
+    Returns set of 0-indexed line numbers that changed.
+    """
+    if old_source is None:
+        # All lines are new
+        return set(range(len(new_source.split("\n"))))
+
+    old_lines = old_source.split("\n")
+    new_lines = new_source.split("\n")
+
+    changed = set()
+
+    # Use SequenceMatcher to find differences
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("replace", "insert"):
+            # Lines j1 to j2 in new are changed/added
+            for j in range(j1, j2):
+                changed.add(j)
+
+    return changed
 
 
 def is_github_url(source: str) -> bool:
@@ -86,6 +113,57 @@ def print_llm_status():
     print()
 
 
+def print_plain_output(
+    entity_name: str,
+    file_path: str,
+    snapshots: list,
+    entity_type: str,
+    skip_summary: bool = False,
+):
+    """Print entity evolution as plain ASCII text for scripting/Claude Code."""
+    print(f"# {entity_type.capitalize()}: {entity_name}")
+    print(f"# File: {file_path}")
+    print(f"# Versions: {len(snapshots)}")
+    print()
+
+    # Generate and print LLM summary (unless skipped)
+    if not skip_summary:
+        from .summarizer import generate_evolution_summary
+
+        summary = generate_evolution_summary(
+            entity_name, file_path, snapshots, entity_type=entity_type
+        )
+        if summary:
+            print("## Summary")
+            print()
+            print(summary)
+            print()
+
+    # Print each version
+    for i, snapshot in enumerate(snapshots):
+        commit = snapshot.commit
+        change_type = snapshot.change_type.upper()
+
+        print("=" * 60)
+        print(f"## Version {i + 1}/{len(snapshots)} - {change_type}")
+        print(f"Commit: {commit.short_hash} ({commit.timestamp.strftime('%Y-%m-%d')})")
+        print(f"Author: {commit.author_name}")
+        print(f"Message: {commit.subject}")
+        print()
+
+        # Compute changed lines
+        prev_source = snapshots[i - 1].source if i > 0 else None
+        changed_lines = compute_changed_lines(prev_source, snapshot.source)
+
+        # Print source with line numbers, marking changed lines
+        lines = snapshot.source.split("\n")
+        for j, line in enumerate(lines):
+            line_num = snapshot.start_line + j
+            marker = "+" if j in changed_lines else " "
+            print(f"{marker} {line_num:4d} | {line}")
+        print()
+
+
 def main():
     """Main entry point for view-fn-hist CLI."""
     parser = argparse.ArgumentParser(
@@ -124,6 +202,16 @@ def main():
         choices=["auto", "function", "class", "struct", "enum", "impl", "interface"],
         default="auto",
         help="Entity type to track (default: auto-detect)",
+    )
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        help="Output plain text instead of TUI (for scripting/Claude Code)",
+    )
+    parser.add_argument(
+        "--no-summary",
+        action="store_true",
+        help="Skip LLM summary generation (useful when Claude will analyze the output)",
     )
 
     parsed = parser.parse_args()
@@ -265,6 +353,13 @@ def main():
     print(f"Found {entity_type} with {len(snapshots)} versions")
     print()
 
+    # Plain text output mode (for scripting/Claude Code)
+    if parsed.plain:
+        print_plain_output(
+            func_name, file_path, snapshots, entity_type, skip_summary=parsed.no_summary
+        )
+        return
+
     # Print LLM status before launching TUI
     print_llm_status()
 
@@ -281,7 +376,9 @@ def main():
         print()
         input("Press Enter to start TUI...")
 
-    # Launch TUI
+    # Launch TUI (lazy import to avoid requiring textual for --plain mode)
+    from .tui import run_tui
+
     run_tui(
         func_name, file_path, snapshots, debug=parsed.debug, entity_type=entity_type
     )

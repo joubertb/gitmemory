@@ -10,6 +10,9 @@ uv venv
 uv pip install -e .
 source .venv/bin/activate
 
+# Or install globally via pipx (for Claude Code skill)
+pipx install .
+
 # View entity history - type is auto-detected
 view-fn-hist <github-file-url> <entity-name>
 
@@ -52,6 +55,8 @@ view-fn-hist --web --port 3000  # Custom port
 - `-d, --debug` — Show LLM prompt before starting TUI
 - `--web` — Start web server instead of TUI
 - `--port PORT` — Port for web server (default: 8000)
+- `--plain` — Output plain text instead of TUI (for scripting/Claude Code)
+- `--no-summary` — Skip LLM summary (useful when Claude analyzes the output)
 
 **Supported entity types by language:**
 | Language   | Supported Types                        |
@@ -133,6 +138,55 @@ VIEW_FN_HIST_MODEL=openrouter/google/gemini-flash-1.5
 **Getting tokens:**
 - GitHub: https://github.com/settings/tokens (select `public_repo` scope)
 - OpenRouter: https://openrouter.ai/keys
+
+## Claude Code Skill
+
+GitMemory includes a Claude Code skill for viewing entity history directly in Claude Code.
+
+**Installation (from repo root):**
+```bash
+# Install CLI globally
+pipx install .
+
+# Symlink skill to Claude
+ln -s "$(pwd)/skills/view-git-history" ~/.claude/skills/view-git-history
+```
+
+**Usage:**
+```
+/view-git-history <entity-name> [file-path]
+```
+
+The skill runs `view-fn-hist --plain --no-summary` and Claude analyzes the output to provide a summary.
+
+**Output modes:**
+- Default: Concise single-paragraph summary
+- Verbose (`-v`): Detailed timeline with milestones and patterns
+
+### Using with Planning
+
+When planning changes to existing code, git history provides valuable context about why code exists and what approaches were tried. There are several ways to integrate this:
+
+**Option 1: Global CLAUDE.md (recommended)**
+
+Add to `~/.claude/CLAUDE.md`:
+```markdown
+## Planning Guidelines
+
+When planning changes to existing code, use `/view-git-history` on key functions/classes to understand:
+- Why the current implementation exists
+- What approaches were tried and rejected (check WHY NOT sections in commits)
+- How stable/volatile the code is
+- Recent changes that might affect your approach
+```
+
+**Option 2: Project CLAUDE.md**
+
+Same as above, but add to the project's `CLAUDE.md` for project-specific planning guidance.
+
+**Option 3: Custom planning skill**
+
+Create a `/plan-with-history` skill that wraps the planning process and automatically pulls git history for relevant entities before generating a plan.
 
 ## Project Structure
 
